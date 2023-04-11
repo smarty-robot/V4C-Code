@@ -26,28 +26,27 @@ float leftAngle, rightAngle;
 float flying[2] = {110,90};
 float driving[2] = {180, 160};
 
-double maxRadPerSec = 50.0;
-
-double p = 1; // position
-double i = 0.5; // integral
-double d = 0.01; // derivative
-double dt = 0.1; //ms
-PID motor_BL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_FL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_BR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_FR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-
 void setup() {
   // initialize encoder pins as inputs
   pinMode(leftEncoderPin, INPUT);
   pinMode(rightEncoderPin, INPUT);
 
   pinMode(15, INPUT); // left
-  pinMode(14, INPUT); // right
-  pinMode(13, INPUT); // wings
+  // pinMode(14, INPUT); // right
+  // pinMode(13, INPUT); // wings
 }
 
+
+double p = 100; // position
+double i = 10; // integral
+double d = 0; // derivative
+double dt = 0.05; //ms
+double currentLimit = 3200;
+PID motor_BL_PID = PID(dt, currentLimit, -currentLimit, p, d, i);
+
 int iterator = 10;
+int then = 0;
+int itsbeen = 0;
 
 void loop() {
 
@@ -61,76 +60,53 @@ void loop() {
         //delay(1000);
 
         float leftIn = pulseIn(15, HIGH);      // Left Velocity   1006 - 2026
-        float rightIn = pulseIn(14, HIGH);     // Right Velocity  1005 - 2027
-        float armPosIn = pulseIn(13, HIGH);    // Arm Position    1100 - 1900
-
-        if (false){//print maps
-          Serial.print("Left 1: ");
-          Serial.println(leftIn);
-          Serial.print("Right 2: ");
-          Serial.println(rightIn);
-          Serial.print("Arm Pos: ");
-          Serial.println(armPosIn); 
-        } 
-
+        
         int max = 100;
         int leftPer = map(leftIn, 900, 2100, max, -max);
-        int rightPer = map(rightIn, 900, 2100, max, -max);
-        int armPer = map(armPosIn, 1100, 1900, -90, 0);
-
-        if (false){//print maps
-          Serial.print("Left 1: ");
-          Serial.println(leftPer);
-          Serial.print("Right 2: ");
-          Serial.println(rightPer);
-          Serial.print("Arm Pos: ");
-          Serial.println(armPer); 
-        } 
-
+        
         float maxRadPerSec = 50.0;
 
         float leftVelTarget = map(leftPer, -100, 100, -maxRadPerSec, maxRadPerSec);
-        float rightVelTarget = map(rightPer, -100, 100, -maxRadPerSec, maxRadPerSec);
 
-        double motorVels[4] = {0,1,2,3};
-        for (int i = 0; i < 4; i++){
-          motorVels[i] = bus.Get(i).Velocity();
-        }
+        double actualVel = bus.Get(0).Velocity();
+
+        int torqBL = motor_BL_PID.calculate(leftVelTarget, actualVel);
         
-        int torqBL = motor_BL_PID.calculate(leftVelTarget, motorVels[0]);
-
         bus.CommandTorques(torqBL, 0, 0, 0, C610Subbus::kOneToFourBlinks);
 
-        if(iterator%40 == 0){//print Vel Target
+        if (iterator%40 == 0){//print maps
           Serial.println();
-          Serial.print("Left Velocity Target: ");
+
+          Serial.print("Left Duty:    ");
+          Serial.println(leftIn);
+        
+          Serial.print("Left Per:     ");
+          Serial.println(leftPer);
+
+          Serial.print("Target Vel    ");
           Serial.println(leftVelTarget);
-          Serial.print("Right Velocity Target: ");
-          Serial.println(rightVelTarget);
-          Serial.println("Motor Velocities");
-          for (int i = 0; i < 4; i++){
-            Serial.print("    M");
-            Serial.print(i);
-            Serial.print("  ");
-            Serial.print(motorVels[i]);
-            Serial.println(" rps");
-          }
+
+          Serial.print("Actual Vel    ");
+          Serial.println(actualVel);
+
+          Serial.print("System Input  ");
+          Serial.println(torqBL);
         }
-
-
-        // if (iterator%40 == 20){
+      
+        // if(iterator%40 == 0){//print Vel Target
         //   Serial.println();
-        //   int ct = 300;
-        //   Serial.println("Current Commanded");
-        //   Serial.println(ct);
-        //   bus.CommandTorques(ct, 0, 0, 0, C610Subbus::kOneToFourBlinks);
-        //   float m2_current = bus.Get(0).Current(); // Get the current estimate of motor 2 in amps.
-        //   Serial.println("Current");
-        //   Serial.println(m2_current);
-        //   Serial.println("Velocity");
-        //   float m1_vel_backLeft = bus.Get(0).Velocity();
-        //   Serial.println(m1_vel_backLeft);
+        //   Serial.print("Left Velocity Target: ");
+        //   Serial.println(leftVelTarget);
+        //   Serial.println("Motor Velocities");
+        //   for (int i = 0; i < 1; i++){
+        //     Serial.print("    M");
+        //     Serial.print(i);
+        //     Serial.print("  ");
+        //     Serial.print(motorVels[i]);
+        //     Serial.println(" rps");
+        //   }
         // }
+
         iterator++;
         
     }
