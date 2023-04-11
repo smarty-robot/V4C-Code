@@ -1,7 +1,9 @@
-
-
 #include <Arduino.h>
 #include "C610Bus.h"
+#include <iostream>
+#include <string.h>
+#include <stdio.h>
+#include "pid.h"
  
 long last_command = 0;
 C610Bus<CAN1> bus; // Initialization. Templated to either use CAN1 or CAN2.
@@ -24,6 +26,17 @@ float leftAngle, rightAngle;
 float flying[2] = {110,90};
 float driving[2] = {180, 160};
 
+double maxRadPerSec = 50.0;
+
+double p = 1; // position
+double i = 0.5; // integral
+double d = 0.01; // derivative
+double dt = 0.1; //ms
+PID motor_BL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
+// PID motor_FL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
+// PID motor_BR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
+// PID motor_FR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
+
 void setup() {
   // initialize encoder pins as inputs
   pinMode(leftEncoderPin, INPUT);
@@ -37,7 +50,7 @@ void setup() {
 int iterator = 10;
 
 void loop() {
-    
+
     bus.PollCAN(); // Check for messages from the motors.
     //bus.CommandTorques(0, 0, 0, 0, C610Subbus::kOneToFourBlinks);
 
@@ -83,16 +96,29 @@ void loop() {
         for (int i = 0; i < 4; i++){
           motorVels[i] = bus.Get(i).Velocity();
         }
+        
+        int torqBL = motor_BL_PID.calculate(leftVelTarget, motorVels[0]);
+
+        bus.CommandTorques(torqBL, 0, 0, 0, C610Subbus::kOneToFourBlinks);
 
         if(iterator%40 == 0){//print Vel Target
-          bus.CommandTorques(500, 500, -500, -500, C610Subbus::kOneToFourBlinks);
+          Serial.println();
           Serial.print("Left Velocity Target: ");
           Serial.println(leftVelTarget);
           Serial.print("Right Velocity Target: ");
           Serial.println(rightVelTarget);
-          Serial.print("Motor Velocities");
+          Serial.println("Motor Velocities");
+          for (int i = 0; i < 4; i++){
+            Serial.print("    M");
+            Serial.print(i);
+            Serial.print("  ");
+            Serial.print(motorVels[i]);
+            Serial.println(" rps");
+          }
+        }
 
-        // if (false || iterator%40 == 20){
+
+        // if (iterator%40 == 20){
         //   Serial.println();
         //   int ct = 300;
         //   Serial.println("Current Commanded");
@@ -106,7 +132,7 @@ void loop() {
         //   Serial.println(m1_vel_backLeft);
         // }
         iterator++;
-    }
+        
     }
 }
 
