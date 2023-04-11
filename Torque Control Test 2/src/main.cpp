@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include "C610Bus.h"
-
+ 
 long last_command = 0;
 C610Bus<CAN1> bus; // Initialization. Templated to either use CAN1 or CAN2.
 
@@ -34,72 +34,80 @@ void setup() {
   pinMode(13, INPUT); // wings
 }
 
+int iterator = 10;
+
 void loop() {
     
-
     bus.PollCAN(); // Check for messages from the motors.
+    //bus.CommandTorques(0, 0, 0, 0, C610Subbus::kOneToFourBlinks);
 
     long now = millis();
     if (now - last_command >= 10) // Loop at 100Hz. You should limit the rate at which you call CommandTorques to <1kHz to avoid saturating the CAN bus bandwidth
     {
-        int max = 32000;
-        float left_in = pulseIn(15, HIGH);
-        float right_in = pulseIn(14, HIGH);
-        if (left_in < 1000 || right_in < 1000){max = 0;} // handle transmitter disconnect
 
-        int left_effort = map(left_in, 1000, 2100, max, -max);
-        int right_effort = map(right_in, 1000, 2100, max, -max);
+        //delay(1000);
 
-        Serial.println();
-        Serial.print("Left 1: ");
-        Serial.println(left_in);
-        Serial.println(left_effort);
-        Serial.print("Right 2: ");
-        Serial.println(right_in);
-        Serial.println(right_effort);
+        float leftIn = pulseIn(15, HIGH);      // Left Velocity   1006 - 2026
+        float rightIn = pulseIn(14, HIGH);     // Right Velocity  1005 - 2027
+        float armPosIn = pulseIn(13, HIGH);    // Arm Position    1100 - 1900
 
-        int deadzone = 3000;
-        
-        if(left_effort < deadzone && left_effort > -deadzone){
-          left_effort = 0;
+        if (false){//print maps
+          Serial.print("Left 1: ");
+          Serial.println(leftIn);
+          Serial.print("Right 2: ");
+          Serial.println(rightIn);
+          Serial.print("Arm Pos: ");
+          Serial.println(armPosIn); 
+        } 
+
+        int max = 100;
+        int leftPer = map(leftIn, 900, 2100, max, -max);
+        int rightPer = map(rightIn, 900, 2100, max, -max);
+        int armPer = map(armPosIn, 1100, 1900, -90, 0);
+
+        if (false){//print maps
+          Serial.print("Left 1: ");
+          Serial.println(leftPer);
+          Serial.print("Right 2: ");
+          Serial.println(rightPer);
+          Serial.print("Arm Pos: ");
+          Serial.println(armPer); 
+        } 
+
+        float maxRadPerSec = 50.0;
+
+        float leftVelTarget = map(leftPer, -100, 100, -maxRadPerSec, maxRadPerSec);
+        float rightVelTarget = map(rightPer, -100, 100, -maxRadPerSec, maxRadPerSec);
+
+        double motorVels[4] = {0,1,2,3};
+        for (int i = 0; i < 4; i++){
+          motorVels[i] = bus.Get(i).Velocity();
         }
 
-        if(right_effort < deadzone && right_effort > -deadzone){
-          right_effort = 0;
-        }
+        if(iterator%40 == 0){//print Vel Target
+          bus.CommandTorques(500, 500, -500, -500, C610Subbus::kOneToFourBlinks);
+          Serial.print("Left Velocity Target: ");
+          Serial.println(leftVelTarget);
+          Serial.print("Right Velocity Target: ");
+          Serial.println(rightVelTarget);
+          Serial.print("Motor Velocities");
 
-        // Send Drive Motor Command
-        bus.CommandTorques(left_effort, left_effort, right_effort, right_effort, C610Subbus::kOneToFourBlinks);
-
-        float throttle_in = pulseIn(13, HIGH);
-        // Serial.println("Throttle 3");
-        // Serial.print(throttle_in);
-
-
-        // read encoder values
-        leftEncoderValue = analogRead(leftEncoderPin);
-        rightEncoderValue = analogRead(rightEncoderPin);
-
-        // map encoder values to angles
-        leftAngle = map(leftEncoderValue, 0, 2047, 0, 360);
-        rightAngle = map(rightEncoderValue, 0, 2047, 0, 360);
-
-        // do something with the angles
-        // ...
-        // Serial.print("Right Angle : ");
-        // Serial.println(rightAngle);
-        // Serial.print("Left Angle : ");
-        // Serial.println(leftAngle);
-
-        // These lines will cause the motors to turn. Make sure they are mounted safely. 
-        // bus.CommandTorques(left_effort, left_effort, 0, 0, C610Subbus::kFiveToEightBlinks);      // Command 500mA to motor 5, 600ma to motor 6, etc. The last parameter specifies to command the motors with IDs 5-8.
-        float m0_pos = bus.Get(3).Position(); // Get the shaft position of motor 0 in radians.
-        float m1_vel = bus.Get(3).Velocity(); // Get the shaft velocity of motor 1 in radians/sec.
-        float m2_current = bus.Get(3).Current(); // Get the current estimate of motor 2 in amps.
-
-        last_command = now;
+        // if (false || iterator%40 == 20){
+        //   Serial.println();
+        //   int ct = 300;
+        //   Serial.println("Current Commanded");
+        //   Serial.println(ct);
+        //   bus.CommandTorques(ct, 0, 0, 0, C610Subbus::kOneToFourBlinks);
+        //   float m2_current = bus.Get(0).Current(); // Get the current estimate of motor 2 in amps.
+        //   Serial.println("Current");
+        //   Serial.println(m2_current);
+        //   Serial.println("Velocity");
+        //   float m1_vel_backLeft = bus.Get(0).Velocity();
+        //   Serial.println(m1_vel_backLeft);
+        // }
+        iterator++;
     }
-
+    }
 }
 
 
