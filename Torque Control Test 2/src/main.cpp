@@ -22,11 +22,11 @@ CAN ID Bus Chart
 void setup() {
   pinMode(15, INPUT); // left
   pinMode(14, INPUT); // right
-  // pinMode(13, INPUT); // wings
+  pinMode(13, INPUT); // wings
 }
 
-// HallSensorAS5600 hallLeft(A6, 261, true);  // Create HallSensor object with pin number as argument
-// HallSensorAS5600 hallRight(A5, -218, false);  // Create HallSensor object with pin number as argument
+HallSensorAS5600 hallLeft(A6, 261, true);  // Create HallSensor object with pin number as argument
+HallSensorAS5600 hallRight(A5, -218, false);  // Create HallSensor object with pin number as argument
 
 double drive_p = 100; // position
 double drive_i = 10; // integral
@@ -37,6 +37,9 @@ PID pidBL = PID(drive_dt, currentLimit, -currentLimit, 80, drive_d, drive_i);
 PID pidFL = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
 PID pidBR = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
 PID pidFR = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
+
+PID pidWL = PID(.1, 1000, -1000, 100, 10, 30);
+
 
 int iterator = 0;
 int hold = 0;
@@ -111,5 +114,20 @@ void loop() {
           Serial.println();
         }
         iterator++;
+
+        float wingIn = pulseIn(13, HIGH);
+        float wingPosTarget = map(wingIn, 1100, 1900, 0, 180);
+        float wingPos = hallLeft.read();
+        int leftWingTorq = pidWL.calculate(wingPosTarget, wingPos);
+        bus.CommandTorques(-leftWingTorq, 0,0,0, C610Subbus::kFiveToEightBlinks);
+
+        if(iterator%50 == 0){
+          Serial.print("wing target positon:    ");
+          Serial.println(wingPosTarget);
+          Serial.print("Left Wing Position:     ");
+          Serial.println(wingPos);
+          Serial.print("Left Wing Torque:       ");
+          Serial.println(leftWingTorq);
+        }
     }
 }
