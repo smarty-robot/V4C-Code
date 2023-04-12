@@ -4,7 +4,8 @@
 #include <string.h>
 #include <stdio.h>
 #include "pid.h"
- 
+#include "HallSensorAS5600.h"  // Include HallSensor library
+
 long last_command = 0;
 C610Bus<CAN1> bus; // Initialization. Templated to either use CAN1 or CAN2.
 
@@ -18,36 +19,28 @@ CAN ID Bus Chart
 6 - Shoulder Right
 */
 
-const int leftEncoderPin = A6;
-const int rightEncoderPin = A5;
-
-int leftEncoderValue, rightEncoderValue;
-float leftAngle, rightAngle;
-float flying[2] = {110,90};
-float driving[2] = {180, 160};
-
-double maxRadPerSec = 50.0;
-
-double p = 1; // position
-double i = 0.5; // integral
-double d = 0.01; // derivative
-double dt = 0.1; //ms
-PID motor_BL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_FL_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_BR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-// PID motor_FR_PID = PID(dt, maxRadPerSec, -maxRadPerSec, p, d, i);
-
 void setup() {
-  // initialize encoder pins as inputs
-  pinMode(leftEncoderPin, INPUT);
-  pinMode(rightEncoderPin, INPUT);
-
   pinMode(15, INPUT); // left
   pinMode(14, INPUT); // right
-  pinMode(13, INPUT); // wings
+  // pinMode(13, INPUT); // wings
 }
 
-int iterator = 10;
+// HallSensorAS5600 hallLeft(A6, 261, true);  // Create HallSensor object with pin number as argument
+// HallSensorAS5600 hallRight(A5, -218, false);  // Create HallSensor object with pin number as argument
+
+double drive_p = 100; // position
+double drive_i = 10; // integral
+double drive_d = 5; // derivative
+double drive_dt = .1; //ms
+double currentLimit = 20000;
+PID pidBL = PID(drive_dt, currentLimit, -currentLimit, 80, drive_d, drive_i);
+PID pidFL = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
+PID pidBR = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
+PID pidFR = PID(drive_dt, currentLimit, -currentLimit, drive_p, drive_d, drive_i);
+
+int iterator = 0;
+int hold = 0;
+float maxRadPerSec = 50.0;
 
 void loop() {
 
@@ -57,83 +50,66 @@ void loop() {
     long now = millis();
     if (now - last_command >= 10) // Loop at 100Hz. You should limit the rate at which you call CommandTorques to <1kHz to avoid saturating the CAN bus bandwidth
     {
-
-        //delay(1000);
-
-        float leftIn = pulseIn(15, HIGH);      // Left Velocity   1006 - 2026
-        float rightIn = pulseIn(14, HIGH);     // Right Velocity  1005 - 2027
-        float armPosIn = pulseIn(13, HIGH);    // Arm Position    1100 - 1900
-
-        if (false){//print maps
-          Serial.print("Left 1: ");
-          Serial.println(leftIn);
-          Serial.print("Right 2: ");
-          Serial.println(rightIn);
-          Serial.print("Arm Pos: ");
-          Serial.println(armPosIn); 
-        } 
-
+        //Serial.println(now - last_command);
+        last_command = millis();
         int max = 100;
-        int leftPer = map(leftIn, 900, 2100, max, -max);
-        int rightPer = map(rightIn, 900, 2100, max, -max);
-        int armPer = map(armPosIn, 1100, 1900, -90, 0);
 
-        if (false){//print maps
-          Serial.print("Left 1: ");
-          Serial.println(leftPer);
-          Serial.print("Right 2: ");
-          Serial.println(rightPer);
-          Serial.print("Arm Pos: ");
-          Serial.println(armPer); 
-        } 
-
-        float maxRadPerSec = 50.0;
-
+        float leftIn = pulseIn(15, HIGH);
+        int leftPer = map(leftIn, 900, 2100, -max, max);
         float leftVelTarget = map(leftPer, -100, 100, -maxRadPerSec, maxRadPerSec);
+
+        float rightIn = pulseIn(14, HIGH);
+        int rightPer = map(rightIn, 900, 2100, -max, max);
         float rightVelTarget = map(rightPer, -100, 100, -maxRadPerSec, maxRadPerSec);
 
-        double motorVels[4] = {0,1,2,3};
+        double actualVel[4];
         for (int i = 0; i < 4; i++){
-          motorVels[i] = bus.Get(i).Velocity();
+          actualVel[i] = bus.Get(i).Velocity();
         }
-        
-        int torqBL = motor_BL_PID.calculate(leftVelTarget, motorVels[0]);
+        int torqueMtr[4] = {0, 0, 0, 0};
+        torqueMtr[0] = pidBL.calculate(leftVelTarget, actualVel[0]);
+        torqueMtr[1] = pidFL.calculate(leftVelTarget, actualVel[1]);
+        torqueMtr[2] = pidBR.calculate(rightVelTarget, actualVel[2]);
+        torqueMtr[3] = pidFR.calculate(rightVelTarget, actualVel[3]);
 
-        bus.CommandTorques(torqBL, 0, 0, 0, C610Subbus::kOneToFourBlinks);
+        // bus.CommandTorques(250,250,-250,-250, C610Subbus::kOneToFourBlinks);
+        bus.CommandTorques(torqueMtr[0], torqueMtr[1], torqueMtr[2], torqueMtr[3], C610Subbus::kOneToFourBlinks);
 
-        if(iterator%40 == 0){//print Vel Target
+        if (false && iterator%5 == 0){//print maps
           Serial.println();
-          Serial.print("Left Velocity Target: ");
+
+          Serial.print("Time Past:      ");
+          Serial.println((millis() - hold));
+          hold = millis();
+
+          Serial.print("Left Duty:      ");
+          Serial.println(leftIn);
+          Serial.print("Left Per:       ");
+          Serial.println(leftPer);
+          Serial.print("Left Velocity:  ");
           Serial.println(leftVelTarget);
-          Serial.print("Right Velocity Target: ");
+
+          Serial.print("Right Duty:     ");
+          Serial.println(rightIn);
+          Serial.print("Right Per:      ");
+          Serial.println(rightPer);
+          Serial.print("Right Velocity: ");
           Serial.println(rightVelTarget);
-          Serial.println("Motor Velocities");
+
+          Serial.print("Actual Vel      ");
           for (int i = 0; i < 4; i++){
-            Serial.print("    M");
-            Serial.print(i);
+            Serial.print(actualVel[i]);
             Serial.print("  ");
-            Serial.print(motorVels[i]);
-            Serial.println(" rps");
           }
+          Serial.println();
+
+          Serial.print("System Input    ");
+          for (int i = 0; i < 4; i++){
+            Serial.print(torqueMtr[i]);
+            Serial.print("  ");
+          }
+          Serial.println();
         }
-
-
-        // if (iterator%40 == 20){
-        //   Serial.println();
-        //   int ct = 300;
-        //   Serial.println("Current Commanded");
-        //   Serial.println(ct);
-        //   bus.CommandTorques(ct, 0, 0, 0, C610Subbus::kOneToFourBlinks);
-        //   float m2_current = bus.Get(0).Current(); // Get the current estimate of motor 2 in amps.
-        //   Serial.println("Current");
-        //   Serial.println(m2_current);
-        //   Serial.println("Velocity");
-        //   float m1_vel_backLeft = bus.Get(0).Velocity();
-        //   Serial.println(m1_vel_backLeft);
-        // }
         iterator++;
-        
     }
 }
-
-
